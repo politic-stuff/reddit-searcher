@@ -137,21 +137,38 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.9);
+            background: rgba(0, 0, 0, 0.95);
             z-index: 1000;
-            justify-content: center;
-            align-items: center;
             cursor: pointer;
+            overflow-y: auto;
         }
 
         .lightbox.active {
             display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
         }
 
         .lightbox img {
-            max-width: 90%;
-            max-height: 90%;
+            max-width: min(900px, 90%);
             border-radius: 8px;
+            flex-shrink: 0;
+        }
+
+        .lightbox-text {
+            max-width: min(900px, 90%);
+            margin-top: 16px;
+            padding: 16px 20px;
+            background: #16213e;
+            border-radius: 8px;
+            border: 1px solid #0f3460;
+            color: #ccc;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            flex-shrink: 0;
         }
 
         .no-results {
@@ -196,6 +213,7 @@
 
     <div class="lightbox" id="lightbox">
         <img id="lightboxImg" src="" alt="Enlarged view">
+        <div class="lightbox-text" id="lightboxText"></div>
     </div>
 
     <script>
@@ -908,7 +926,7 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
             img.src = post.image;
             img.alt = 'Reddit post screenshot';
             img.loading = 'lazy';
-            img.addEventListener('click', () => openLightbox(post.image));
+            img.addEventListener('click', () => openLightbox(post.image, post.text));
 
             const textDiv = document.createElement('div');
             textDiv.className = 'card-text';
@@ -959,14 +977,23 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
             : `Showing ${shown} of ${total} posts`;
     }
 
-    function openLightbox(src) {
+    const lightboxText = document.getElementById('lightboxText');
+
+    function openLightbox(src, text) {
         lightboxImg.src = src;
+        lightboxText.textContent = text;
         lightbox.classList.add('active');
+        lightbox.scrollTop = 0;
     }
 
-    lightbox.addEventListener('click', () => {
-        lightbox.classList.remove('active');
+    lightbox.addEventListener('click', (e) => {
+        if (e.target === lightbox) {
+            lightbox.classList.remove('active');
+        }
     });
+
+    lightboxImg.addEventListener('click', (e) => e.stopPropagation());
+    lightboxText.addEventListener('click', (e) => e.stopPropagation());
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') lightbox.classList.remove('active');

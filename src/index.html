@@ -160,6 +160,52 @@
             flex-shrink: 0;
         }
 
+        .filters {
+            display: flex;
+            gap: 10px;
+            max-width: 600px;
+            margin: 12px auto 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .filter-select {
+            padding: 8px 12px;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+            outline: none;
+            cursor: pointer;
+            min-width: 140px;
+        }
+
+        .filter-select:focus {
+            border-color: #ff6b35;
+        }
+
+        .filter-select option {
+            background: #1a1a2e;
+            color: #e0e0e0;
+        }
+
+        .sort-btn {
+            padding: 8px 14px;
+            border: 2px solid #0f3460;
+            border-radius: 8px;
+            background: #1a1a2e;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .sort-btn:hover, .sort-btn.active {
+            border-color: #ff6b35;
+            color: #ff6b35;
+        }
+
         .no-results {
             text-align: center;
             padding: 60px 20px;
@@ -193,6 +239,15 @@
         <div class="search-container">
             <span class="search-icon">&#128269;</span>
             <input type="text" id="search" placeholder="Search posts..." autocomplete="off">
+        </div>
+        <div class="filters">
+            <select id="filterSub" class="filter-select">
+                <option value="">All Subreddits</option>
+            </select>
+            <select id="filterYear" class="filter-select">
+                <option value="">All Years</option>
+            </select>
+            <button id="sortBtn" class="sort-btn active">Newest First</button>
         </div>
     </header>
 
@@ -1175,14 +1230,82 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
     const noResults = document.getElementById('noResults');
     const lightbox = document.getElementById('lightbox');
     const lightboxImg = document.getElementById('lightboxImg');
+    const lightboxText = document.getElementById('lightboxText');
+    const filterSub = document.getElementById('filterSub');
+    const filterYear = document.getElementById('filterYear');
+    const sortBtn = document.getElementById('sortBtn');
+
+    let sortNewest = true;
+
+    // Parse metadata from post text
+    function parseMeta(text) {
+        const subMatch = text.match(/r\/(\w+)/);
+        const dateMatch = text.match(/(\d{4})-(\d{2})-(\d{2})T[\d:]+Z/);
+        const relMatch = text.match(/(\d+)\s*yr?\.?\s*ago/i);
+        const scoreMatch = text.match(/\|\s*(-?\d+)/);
+        return {
+            sub: subMatch ? 'r/' + subMatch[1] : '',
+            date: dateMatch ? dateMatch[0] : null,
+            year: dateMatch ? dateMatch[1] : (relMatch ? String(2026 - parseInt(relMatch[1])) : ''),
+            score: scoreMatch ? parseInt(scoreMatch[1]) : null
+        };
+    }
+
+    // Enrich posts with parsed metadata
+    posts.forEach(p => {
+        const meta = parseMeta(p.text);
+        p.sub = meta.sub;
+        p.date = meta.date;
+        p.year = meta.year;
+        p.score = meta.score;
+        p.textLower = p.text.toLowerCase();
+    });
+
+    // Populate filter dropdowns
+    function populateFilters() {
+        const subs = [...new Set(posts.map(p => p.sub).filter(Boolean))].sort();
+        const years = [...new Set(posts.map(p => p.year).filter(Boolean))].sort((a, b) => b - a);
+
+        subs.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s;
+            filterSub.appendChild(opt);
+        });
+
+        years.forEach(y => {
+            const opt = document.createElement('option');
+            opt.value = y;
+            opt.textContent = y;
+            filterYear.appendChild(opt);
+        });
+    }
+
+    function getSortedPosts() {
+        const sorted = [...posts];
+        sorted.sort((a, b) => {
+            const aDate = a.date ? new Date(a.date).getTime() : 0;
+            const bDate = b.date ? new Date(b.date).getTime() : 0;
+            // Posts without dates go to the end
+            if (!a.date && b.date) return 1;
+            if (a.date && !b.date) return -1;
+            if (!a.date && !b.date) return 0;
+            return sortNewest ? bDate - aDate : aDate - bDate;
+        });
+        return sorted;
+    }
 
     function renderCards() {
         grid.innerHTML = '';
-        posts.forEach((post, i) => {
+        const sorted = getSortedPosts();
+        sorted.forEach((post) => {
+            const origIndex = posts.indexOf(post);
             const card = document.createElement('div');
             card.className = 'card';
-            card.dataset.index = i;
-            card.dataset.text = post.text.toLowerCase();
+            card.dataset.index = origIndex;
+            card.dataset.text = post.textLower;
+            card.dataset.sub = post.sub;
+            card.dataset.year = post.year;
 
             const img = document.createElement('img');
             img.src = post.image;
@@ -1198,21 +1321,25 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
             card.appendChild(textDiv);
             grid.appendChild(card);
         });
-        updateStats();
+        filterCards();
     }
 
     function filterCards() {
         const query = search.value.toLowerCase().trim();
+        const subFilter = filterSub.value;
+        const yearFilter = filterYear.value;
         const cards = document.querySelectorAll('.card');
         let visible = 0;
 
         cards.forEach(card => {
             const text = card.dataset.text;
-            const matches = !query || text.includes(query);
+            const matchesQuery = !query || text.includes(query);
+            const matchesSub = !subFilter || card.dataset.sub === subFilter;
+            const matchesYear = !yearFilter || card.dataset.year === yearFilter;
+            const matches = matchesQuery && matchesSub && matchesYear;
             card.classList.toggle('hidden', !matches);
             if (matches) visible++;
 
-            // Update text with highlights
             const textDiv = card.querySelector('.card-text');
             const originalText = posts[card.dataset.index].text;
             if (query && matches) {
@@ -1230,7 +1357,7 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
     function updateStats(visible) {
         const total = posts.length;
         if (total === 0) {
-            stats.textContent = 'No posts loaded yet. Add images and OCR text to the posts array.';
+            stats.textContent = 'No posts loaded yet.';
             return;
         }
         const shown = visible !== undefined ? visible : total;
@@ -1238,8 +1365,6 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
             ? `${total} post${total !== 1 ? 's' : ''}`
             : `Showing ${shown} of ${total} posts`;
     }
-
-    const lightboxText = document.getElementById('lightboxText');
 
     function openLightbox(src, text) {
         lightboxImg.src = src;
@@ -1249,19 +1374,24 @@ So yeah, a few points, gents, before we start to jerk each other off over the Lo
     }
 
     lightbox.addEventListener('click', (e) => {
-        if (e.target === lightbox) {
-            lightbox.classList.remove('active');
-        }
+        if (e.target === lightbox) lightbox.classList.remove('active');
     });
-
     lightboxImg.addEventListener('click', (e) => e.stopPropagation());
     lightboxText.addEventListener('click', (e) => e.stopPropagation());
-
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') lightbox.classList.remove('active');
     });
 
     search.addEventListener('input', filterCards);
+    filterSub.addEventListener('change', filterCards);
+    filterYear.addEventListener('change', filterCards);
+    sortBtn.addEventListener('click', () => {
+        sortNewest = !sortNewest;
+        sortBtn.textContent = sortNewest ? 'Newest First' : 'Oldest First';
+        renderCards();
+    });
+
+    populateFilters();
     renderCards();
     </script>
 </body>
